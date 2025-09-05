@@ -10,6 +10,8 @@
 #include "common.h"
 #include "MemTrack.h"
 
+#include <cstdint>
+#include <random>
 void debug_print(const char *_message_format, const char *_message) {
     if (DEBUG_1) {
         printf(_message_format, _message);
@@ -78,6 +80,21 @@ int print_message(int message_type, char *message) {
 //    return 0; // Success
 //}
 
+uint8_t generateRandomUint8() {
+    // Create a random device and generator
+    static std::random_device rd;
+    static std::mt19937 gen(rd());
+
+    // Create a distribution for uint8_t range (0 to 255)
+    static std::uniform_int_distribution<uint16_t> dis(0, 255);
+
+    return static_cast<uint8_t>(dis(gen));
+}
+
+QUANTIZED_OPERAND_SIZE  generate_random_operand_value(void) {
+
+}
+
 unsigned int generate_truly_random_uint(void) {
     static int seeded = 0;
     if (!seeded) {
@@ -95,7 +112,9 @@ unsigned int generate_truly_random_uint(void) {
 unsigned short generate_random_ushort(void) {
     unsigned int r1 = (unsigned int) generate_truly_random_uint(); //todo: use better random number generator
     unsigned int r2 = (unsigned int) generate_truly_random_uint();
-    return (unsigned short int) (((r1 >> 7) << 8) | (r2 >> 7));
+    //return (unsigned short int) (((r1 >> 7) << 8) | (r2 >> 7));
+    /* temporarily limit the range from 0 to 4095 */
+    return (unsigned short int) ((((r1 >> 7) << 8) | (r2 >> 7)) & 0xfff);
 }
 
 char *ushort_to_string(unsigned short int num) {

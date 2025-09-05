@@ -3,6 +3,7 @@
 #ifndef COMMON_H
 #define COMMON_H
 #include <stddef.h>
+#include <cstdint>
 
 #define NEW_STRUCTURE				1
 #define ARBITRARY_SIZE              1024
@@ -51,10 +52,17 @@
 #define MAX_LINE					10000
 #define DEBUG_1						0
 
+#if defined (__16BIT_QUANT_SIZE__)
+# define QUANTIZED_OPERAND_SIZE uint16_t
+# else if defined(__8BIT_QUANT__)
+#   define QUANTIZED_OPERAND_SIZE uint8_t
 //unsigned int	generate_truly_random_uint();
 
 unsigned short 			generate_random_ushort(void);
 unsigned int			generate_truly_random_uint(void);
+
+QUANTIZED_OPERAND_SIZE  generate_random_operand_value(void);
+
 char*					ushort_to_string(unsigned short int num);
 char*					uint_to_string(unsigned int num);
 

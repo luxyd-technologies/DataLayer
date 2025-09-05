@@ -5,7 +5,9 @@
 #include "common.h"
 #include <assert.h>
 #include <cstdio>
+#include <cstring>
 #include <stdlib.h>
+#include <time.h>
 
 #include "InterfaceKernel.h"
 #include "MemTrack.h"
@@ -49,18 +51,19 @@ matrix_info* convert_operation_to_matrix_info(const Operation* _operation) {
     operand1_operand2_common_dimension = _operation->operand1->cols;
 
     // set the dimension info
-    this_matrix_info->m = result_row_size;
-    this_matrix_info->n = result_col_size;
-    this_matrix_info->p = operand1_operand2_common_dimension;
+    this_matrix_info->m = _operation->operand1->rows;
+    this_matrix_info->n = _operation->operand1->cols;
+    this_matrix_info->p = _operation->operand2->cols;
 
-    this_matrix_info->a_ptr = _operation->operand1->data->ushort_data;
-    this_matrix_info->b_ptr = _operation->operand2->data->ushort_data;
-    this_matrix_info->p_ptr = _operation->result->data->uint_data;
+    /* unused for the time being, to be removed */
+    this_matrix_info->addr_a = 0;
+    this_matrix_info->addr_b = 0;
+    this_matrix_info->addr_p = 0;
 
     return (matrix_info*) this_matrix_info;
 }
 
-#define test_dev_open_name	"luxyd-ai-test"
+#define test_dev_open_name	"/dev/luxyd-ai"
 
 int test_luxyd(const Operation* _operation) {
 
@@ -68,11 +71,17 @@ int test_luxyd(const Operation* _operation) {
     unsigned int    max_row_size = 40;
     unsigned int    max_col_size = 40;
     unsigned int    matrix_count_per_operation = 3;
-    unsigned int    temp_buffer_size = (max_row_size * max_col_size * matrix_count_per_operation) * sizeof(__u32) ;
+    /* fixed size, follows the allocated fpga's matrices size */
+    unsigned int    temp_buffer_size = 4096 * sizeof(__u16) * 2 + 4096 * sizeof(__u32);
     int             buffer_size = int(temp_buffer_size);
+    int             size_a = _operation->operand1->rows * _operation->operand1->cols * sizeof(__u16);
+    int             size_b = _operation->operand2->rows * _operation->operand2->cols * sizeof(__u16);
+    int             size_p = _operation->operand1->rows * _operation->operand2->cols * sizeof(__u32);
+    struct timespec start, end;
+    double          elapsed_secs;
 
     matrix_info*    matrix_info = convert_operation_to_matrix_info(_operation);
-    if (matrix_info != nullptr) {
+    if (matrix_info == nullptr) {
         fprintf(stderr, "Operation to matrix info conversion failed\n");
         return RETURN_FAILURE;
     }
@@ -82,14 +91,38 @@ int test_luxyd(const Operation* _operation) {
 
     void* buffer = luxyd_dev_init(fd, &buffer_size);
 
+    /* copy input matrices to device mmapped memory */
+    memcpy((__u16 *)((char *)buffer + MAT_A_OFFSET), _operation->operand1->data->ushort_data, size_a);
+    memcpy((__u16 *)((char *)buffer + MAT_B_OFFSET), _operation->operand2->data->ushort_data, size_b);
+
     result = luxyd_dev_matrix_load(fd, buffer, matrix_info);
     if (result > 0) {
         printf("Ok\n");
     }
+    clock_gettime(CLOCK_MONOTONIC_RAW, &start);
     result = luxyd_dev_matrix_multiply(fd, buffer, matrix_info);
+    clock_gettime(CLOCK_MONOTONIC_RAW, &end);
     if (result > 0) {
         printf("Ok\n");
     }
+
+    /*
+     * compare the result calculated by the application, stored in the local memory with
+     * the result calculated by the fpga card, stored in device mmapped memory
+     */
+    result = memcmp(_operation->result->data->uint_data, (__u32 *)((char *)buffer + MAT_P_OFFSET),
+		    size_p);
+    if (result == 0)
+	    fprintf(stdout, "Operation %d passed\n", _operation->operation_id);
+    else
+	    fprintf(stderr, "Operation %d failed\n", _operation->operation_id);
+
+    /* copy result from device mmapped memory to local buffer */
+    memcpy(_operation->result->data->uint_data, (__u32 *)((char *)buffer + MAT_P_OFFSET),
+	   size_p);
+
+    elapsed_secs = (end.tv_sec - start.tv_sec) + (double)(end.tv_nsec - start.tv_nsec) / 1e9;
+    fprintf(stdout, "Time taken by luxyd_dev_matrix_multiply: %.9f seconds\n", elapsed_secs);
 
     result = luxyd_dev_close(fd, buffer, buffer_size);
 
