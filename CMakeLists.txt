@@ -26,4 +26,6 @@ add_executable(DataLayer
         InterfaceOrchestration.h
         luxyd-ai-ioctl.c
         luxyd-ai-ioctl.h
+        Tensor.cpp
+        Tensor.h
 )
